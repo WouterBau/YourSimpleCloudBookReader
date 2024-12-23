@@ -1,12 +1,9 @@
-using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.Authentication.WebAssembly.Msal.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph;
+using Microsoft.Kiota.Abstractions;
+using Microsoft.Kiota.Abstractions.Authentication;
+using IAccessTokenProvider = Microsoft.AspNetCore.Components.WebAssembly.Authentication.IAccessTokenProvider;
 
 /// <summary>
 /// Adds services and implements methods to use Microsoft Graph SDK.
@@ -30,65 +27,41 @@ internal static class GraphClientExtensions
         });
 
         services.AddScoped<IAuthenticationProvider, GraphAuthenticationProvider>();
-        services.AddScoped<IHttpProvider, HttpClientHttpProvider>(sp => new HttpClientHttpProvider(new HttpClient()));
-        services.AddScoped(sp => new GraphServiceClient(
-              sp.GetRequiredService<IAuthenticationProvider>(),
-              sp.GetRequiredService<IHttpProvider>()));
+        // Specific for WebAssembly, can't create GrahpServiceClient without providing a HttpClient
+        services.AddHttpClient<GraphServiceClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(300);
+        }).AddHttpMessageHandler<BaseAddressAuthorizationMessageHandler>();
+        services.AddScoped(sp =>
+        {
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(GraphServiceClient));
+            return new GraphServiceClient(
+                httpClient,
+                sp.GetRequiredService<IAuthenticationProvider>());
+        });
         return services;
     }
+
 
     /// <summary>
     /// Implements IAuthenticationProvider interface.
     /// Tries to get an access token for Microsoft Graph.
     /// </summary>
-    private class GraphAuthenticationProvider : IAuthenticationProvider
+    /// <param name="Provider"></param>
+    private record GraphAuthenticationProvider(IAccessTokenProvider Provider) : IAuthenticationProvider
     {
-        public GraphAuthenticationProvider(IAccessTokenProvider provider)
-        {
-            Provider = provider;
-        }
-
-        public IAccessTokenProvider Provider { get; }
-
-        public async Task AuthenticateRequestAsync(HttpRequestMessage request)
+        // Implementation of IAuthenticationProvider was wrong in template
+        public async Task AuthenticateRequestAsync(RequestInformation request, Dictionary<string, object>? additionalAuthenticationContext = null, CancellationToken cancellationToken = default)
         {
             var result = await Provider.RequestAccessToken(new AccessTokenRequestOptions()
             {
-                Scopes = new[] { "https://graph.microsoft.com/User.Read" }
+                Scopes = ["https://graph.microsoft.com/User.Read"]
             });
 
             if (result.TryGetToken(out var token))
             {
-                request.Headers.Authorization ??= new AuthenticationHeaderValue("Bearer", token.Value);
+                request.Headers.Add("Authorization", $"{CoreConstants.Headers.Bearer} {token.Value}");
             }
-        }
-    }
-
-    private class HttpClientHttpProvider : IHttpProvider
-    {
-        private readonly HttpClient _client;
-
-        public HttpClientHttpProvider(HttpClient client)
-        {
-            _client = client;
-        }
-
-        public ISerializer Serializer { get; } = new Serializer();
-
-        public TimeSpan OverallTimeout { get; set; } = TimeSpan.FromSeconds(300);
-
-        public void Dispose()
-        {
-        }
-
-        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
-        {
-            return _client.SendAsync(request);
-        }
-
-        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationToken cancellationToken)
-        {
-            return _client.SendAsync(request, completionOption, cancellationToken);
         }
     }
 }
