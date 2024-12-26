@@ -27,17 +27,52 @@ else
             <td> UserPrincipalName </td>
             <td> @user.UserPrincipalName </td>
         </tr>
+        @if(drive != null){
+            <tr>
+                <td> Drive Name </td>
+                <td> @drive.Name </td>
+            </tr>
+        }
+        @if (item != null)
+        {
+            <tr>
+                <td> Item Name </td>
+                <td> @item.Name </td>
+            </tr>
+        }
+        @if (subItem != null)
+        {
+            <tr>
+                <td> Item Name </td>
+                <td> @subItem.Name </td>
+            </tr>
+        }
+
     </table>
 }
 
 @code {
     User? user;
+    Drive? drive;
+    DriveItem? item;
+    DriveItem? subItem;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             user = await GraphServiceClient.Me.GetAsync();
+            if (user == null)
+            {
+                return;
+            }
+
+            drive = await GraphServiceClient.Me.Drive.GetAsync();
+            var root = await GraphServiceClient.Drives[drive.Id].Root.GetAsync();
+            var rootChildren = await GraphServiceClient.Drives[drive.Id].Items[root.Id].Children.GetAsync();
+            item = rootChildren.Value.Where(x => x.Folder != null).FirstOrDefault();
+            var subChildren = await GraphServiceClient.Drives[drive.Id].Items[item.Id].Children.GetAsync();
+            subItem = subChildren.Value.FirstOrDefault();
         }
         catch (Exception ex)
         {
