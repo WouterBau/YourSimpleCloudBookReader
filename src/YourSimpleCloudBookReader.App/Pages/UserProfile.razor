@@ -27,35 +27,50 @@ else
             <td> UserPrincipalName </td>
             <td> @user.UserPrincipalName </td>
         </tr>
-        @if(drive != null){
-            <tr>
-                <td> Drive Name </td>
-                <td> @drive.Name </td>
-            </tr>
-        }
-        @if (item != null)
-        {
-            <tr>
-                <td> Item Name </td>
-                <td> @item.Name </td>
-            </tr>
-        }
-        @if (subItem != null)
-        {
-            <tr>
-                <td> Item Name </td>
-                <td> @subItem.Name </td>
-            </tr>
-        }
-
     </table>
+
+
+
+    @if(isLoadingList) {
+        <p>Loading list...</p>
+    }
+    else {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Item Type</th>
+                    <th>Item Name</th>
+                </tr>
+            </thead>
+            @foreach (var item in items)
+            {
+                <tr>
+                    @if (item.Folder != null)
+                    {
+                        <td>Folder</td>
+                        <td><button @onclick="() => NavigateToFolder(item)">@item.Name</button></td>
+                    }
+                    else if (item.Name?.EndsWith(".pdf") ?? false)
+                    {
+                        <td>File</td>
+                        <td>@item.Name</td>
+                    }
+                </tr>
+            }
+        </table>
+    }
 }
 
 @code {
+
     User? user;
     Drive? drive;
+
+    bool isLoadingList = false;
+
+    Stack<DriveItem> folderStack = new Stack<DriveItem>();
+    IEnumerable<DriveItem> items;
     DriveItem? item;
-    DriveItem? subItem;
 
     protected override async Task OnInitializedAsync()
     {
@@ -69,14 +84,28 @@ else
 
             drive = await GraphServiceClient.Me.Drive.GetAsync();
             var root = await GraphServiceClient.Drives[drive.Id].Root.GetAsync();
-            var rootChildren = await GraphServiceClient.Drives[drive.Id].Items[root.Id].Children.GetAsync();
-            item = rootChildren.Value.Where(x => x.Folder != null).FirstOrDefault();
-            var subChildren = await GraphServiceClient.Drives[drive.Id].Items[item.Id].Children.GetAsync();
-            subItem = subChildren.Value.FirstOrDefault();
+            await GetFolderItems(root);
         }
         catch (Exception ex)
         {
             Console.WriteLine(ex.Message);
         }
     }
+
+    private async void NavigateToFolder(DriveItem folder)
+    {
+        await GetFolderItems(folder);
+    }
+
+    private async Task GetFolderItems(DriveItem folder)
+    {
+        folderStack.Push(folder);
+        isLoadingList = true;
+        StateHasChanged();
+
+        items = (await GraphServiceClient.Drives[drive.Id].Items[folder.Id].Children.GetAsync()).Value ?? new List<DriveItem>();
+        isLoadingList = false;
+        StateHasChanged();
+    }
+
 }
