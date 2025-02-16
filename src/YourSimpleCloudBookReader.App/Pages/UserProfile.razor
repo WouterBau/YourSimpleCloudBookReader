@@ -29,8 +29,6 @@ else
         </tr>
     </table>
 
-
-
     @if(isLoadingList) {
         <p>Loading list...</p>
     }
@@ -59,12 +57,21 @@ else
                     else if (item.Name?.EndsWith(".pdf") ?? false)
                     {
                         <td>File</td>
-                        <td>@item.Name</td>
+                        <td><button @onclick="() => GetFileContent(item)">@item.Name</button></td>
                     }
                 </tr>
             }
         </table>
     }
+}
+
+@if (isLoadingContent)
+{
+    <p>Loading content...</p>
+}
+else if (!string.IsNullOrWhiteSpace(contentString)) {
+    <h4>@item.Name</h4>
+    <PdfViewer Id="pdfViewer" class="mb-3" Url="@contentString" />
 }
 
 @code {
@@ -77,6 +84,9 @@ else
 
     private readonly Stack<DriveItem> folderStack = new Stack<DriveItem>();
     private IEnumerable<DriveItem> items = new List<DriveItem>();
+
+    private bool isLoadingContent = false;
+    private string contentString = "";
     private DriveItem? item;
 
     protected override async Task OnInitializedAsync()
@@ -123,6 +133,26 @@ else
         folderStack.Pop();
         var item = folderStack.Peek();
         await GetFolderItems(item);
+    }
+
+    private async Task GetFileContent(DriveItem file)
+    {
+        if (file.File == null)
+            return;
+
+        contentString = "";
+        isLoadingContent = true;
+        StateHasChanged();
+
+        item = file;
+        var content = await GraphServiceClient.Drives[drive.Id].Items[file.Id].Content.GetAsync();
+        using (var ms = new MemoryStream())
+        {
+            await content.CopyToAsync(ms);
+            contentString = string.Format("data:application/pdf;base64,{0}", Convert.ToBase64String(ms.ToArray()));
+        }
+        isLoadingContent = false;
+        StateHasChanged();
     }
 
 }
