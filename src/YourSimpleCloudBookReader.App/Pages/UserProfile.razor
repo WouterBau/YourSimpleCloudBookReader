@@ -42,6 +42,12 @@ else
                     <th>Item Name</th>
                 </tr>
             </thead>
+            @if(CanNavigateUp){
+                <tr>
+                    <td>Folder</td>
+                    <td><button @onclick="() => NavigateUp()">..</button></td>
+                </tr>
+            }
             @foreach (var item in items)
             {
                 <tr>
@@ -63,14 +69,15 @@ else
 
 @code {
 
-    User? user;
-    Drive? drive;
+    private User? user;
+    private Drive? drive;
 
-    bool isLoadingList = false;
+    private bool isLoadingList = false;
+    private bool CanNavigateUp { get { return folderStack.Count > 1; } }
 
-    Stack<DriveItem> folderStack = new Stack<DriveItem>();
-    IEnumerable<DriveItem> items;
-    DriveItem? item;
+    private readonly Stack<DriveItem> folderStack = new Stack<DriveItem>();
+    private IEnumerable<DriveItem> items = new List<DriveItem>();
+    private DriveItem? item;
 
     protected override async Task OnInitializedAsync()
     {
@@ -84,6 +91,7 @@ else
 
             drive = await GraphServiceClient.Me.Drive.GetAsync();
             var root = await GraphServiceClient.Drives[drive.Id].Root.GetAsync();
+            folderStack.Push(root);
             await GetFolderItems(root);
         }
         catch (Exception ex)
@@ -92,20 +100,29 @@ else
         }
     }
 
-    private async void NavigateToFolder(DriveItem folder)
+    private async Task NavigateToFolder(DriveItem folder)
     {
+        folderStack.Push(folder);
         await GetFolderItems(folder);
     }
 
     private async Task GetFolderItems(DriveItem folder)
     {
-        folderStack.Push(folder);
         isLoadingList = true;
         StateHasChanged();
 
-        items = (await GraphServiceClient.Drives[drive.Id].Items[folder.Id].Children.GetAsync()).Value ?? new List<DriveItem>();
+        items = (await GraphServiceClient.Drives[drive.Id].Items[folder.Id].Children.GetAsync())?.Value ?? new List<DriveItem>();
         isLoadingList = false;
         StateHasChanged();
+    }
+
+    private async Task NavigateUp() {
+        if (!CanNavigateUp)
+            return;
+
+        folderStack.Pop();
+        var item = folderStack.Peek();
+        await GetFolderItems(item);
     }
 
 }
