@@ -5,63 +5,65 @@
 @inject Microsoft.Graph.GraphServiceClient GraphServiceClient
 @attribute [Authorize]
 
-<h3>User Profile</h3>
-@if (user == null)
-{
-    <p><em>Loading...</em></p>
-}
-else
-{
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Property</th>
-                <th>Value</th>
-            </tr>
-        </thead>
-        <tr>
-            <td> DisplayName </td>
-            <td> @user.DisplayName </td>
-        </tr>
-        <tr>
-            <td> UserPrincipalName </td>
-            <td> @user.UserPrincipalName </td>
-        </tr>
-    </table>
-
-    @if(isLoadingList) {
-        <p>Loading list...</p>
+@if (!IsContentVisible) {
+    <h3>User Profile</h3>
+    @if (user == null)
+    {
+        <p><em>Loading...</em></p>
     }
-    else {
+    else
+    {
         <table class="table">
             <thead>
                 <tr>
-                    <th>Item Type</th>
-                    <th>Item Name</th>
+                    <th>Property</th>
+                    <th>Value</th>
                 </tr>
             </thead>
-            @if(CanNavigateUp){
-                <tr>
-                    <td>Folder</td>
-                    <td><button @onclick="() => NavigateUp()">..</button></td>
-                </tr>
-            }
-            @foreach (var item in items)
-            {
-                <tr>
-                    @if (item.Folder != null)
-                    {
-                        <td>Folder</td>
-                        <td><button @onclick="() => NavigateToFolder(item)">@item.Name</button></td>
-                    }
-                    else if (item.Name?.EndsWith(".pdf") ?? false)
-                    {
-                        <td>File</td>
-                        <td><button @onclick="() => GetFileContent(item)">@item.Name</button></td>
-                    }
-                </tr>
-            }
+            <tr>
+                <td> DisplayName </td>
+                <td> @user.DisplayName </td>
+            </tr>
+            <tr>
+                <td> UserPrincipalName </td>
+                <td> @user.UserPrincipalName </td>
+            </tr>
         </table>
+
+        @if(isLoadingList) {
+            <p>Loading list...</p>
+        }
+        else {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Item Type</th>
+                        <th>Item Name</th>
+                    </tr>
+                </thead>
+                @if(CanNavigateUp){
+                    <tr>
+                        <td>Folder</td>
+                        <td><Button @onclick="() => NavigateUp()">..</Button></td>
+                    </tr>
+                }
+                @foreach (var item in items)
+                {
+                    <tr>
+                        @if (item.Folder != null)
+                        {
+                            <td>Folder</td>
+                            <td><Button @onclick="() => NavigateToFolder(item)">@item.Name</Button></td>
+                        }
+                        else if (item.Name?.EndsWith(".pdf") ?? false)
+                        {
+                            <td>File</td>
+                            <td><Button @onclick="() => GetFileContent(item)">@item.Name</Button></td>
+                        }
+                    </tr>
+                }
+            </table>
+        }
     }
 }
 
@@ -69,8 +71,10 @@ else
 {
     <p>Loading content...</p>
 }
-else if (!string.IsNullOrWhiteSpace(contentString)) {
+
+@if (IsContentVisible) {
     <h4>@item.Name</h4>
+    <Button @onclick="() => contentString = string.Empty">Close</Button>
     <PdfViewer Id="pdfViewer" class="mb-3" Url="@contentString" />
 }
 
@@ -86,7 +90,8 @@ else if (!string.IsNullOrWhiteSpace(contentString)) {
     private IEnumerable<DriveItem> items = new List<DriveItem>();
 
     private bool isLoadingContent = false;
-    private string contentString = "";
+    private string contentString = string.Empty;
+    private bool IsContentVisible => !string.IsNullOrWhiteSpace(contentString);
     private DriveItem? item;
 
     protected override async Task OnInitializedAsync()
