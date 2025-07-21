@@ -281,13 +281,13 @@
         {
             // Check file size before loading
             var fileSize = file.Size ?? 0;
-            if (fileSize > 50 * 1024 * 1024) // 50MB limit
-            {
-                Console.WriteLine($"File too large: {fileSize / (1024 * 1024)}MB. Maximum supported size is 50MB.");
-                isLoadingContent = false;
-                StateHasChanged();
-                return;
-            }
+            // if (fileSize > 50 * 1024 * 1024) // 50MB limit
+            // {
+            //     Console.WriteLine($"File too large: {fileSize / (1024 * 1024)}MB. Maximum supported size is 50MB.");
+            //     isLoadingContent = false;
+            //     StateHasChanged();
+            //     return;
+            // }
 
             var content = await GraphServiceClient.Drives[drive.Id].Items[file.Id].Content.GetAsync();
             
