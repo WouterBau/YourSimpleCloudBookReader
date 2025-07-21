@@ -91,26 +91,7 @@
 }
 
 <script>
-    window.pdfJsHelper = {
-        loadPdf: async function (pdfData) {
-            try {
-                // Since PDF.js is loaded as a module, we need to import it dynamically
-                const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.3.93/pdf.min.mjs');
-                
-                // Set worker source
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.3.93/pdf.worker.min.mjs';
-                
-                // Load PDF document
-                const pdf = await pdfjsLib.getDocument(pdfData).promise;
-                window.currentPdf = pdf;
-                
-                return pdf.numPages;
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                return 0;
-            }
-        },
-        
+    window.pdfJsHelper = {        
         loadPdfFromBytes: async function (pdfBytes) {
             try {
                 // Since PDF.js is loaded as a module, we need to import it dynamically
@@ -279,16 +260,6 @@
         
         try
         {
-            // Check file size before loading
-            var fileSize = file.Size ?? 0;
-            // if (fileSize > 50 * 1024 * 1024) // 50MB limit
-            // {
-            //     Console.WriteLine($"File too large: {fileSize / (1024 * 1024)}MB. Maximum supported size is 50MB.");
-            //     isLoadingContent = false;
-            //     StateHasChanged();
-            //     return;
-            // }
-
             var content = await GraphServiceClient.Drives[drive.Id].Items[file.Id].Content.GetAsync();
             
             // Convert to byte array more efficiently
