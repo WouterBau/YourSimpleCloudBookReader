@@ -111,6 +111,36 @@
             }
         },
         
+        loadPdfFromBytes: async function (pdfBytes) {
+            try {
+                // Since PDF.js is loaded as a module, we need to import it dynamically
+                const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.3.93/pdf.min.mjs');
+                
+                // Set worker source
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.3.93/pdf.worker.min.mjs';
+                
+                // Clean up previous PDF if exists
+                if (window.currentPdf) {
+                    window.currentPdf.destroy();
+                    window.currentPdf = null;
+                }
+                
+                // Convert .NET byte array to Uint8Array
+                const uint8Array = new Uint8Array(pdfBytes);
+                console.log(`Loading PDF from byte array, size: ${uint8Array.length} bytes`);
+                
+                // Load PDF document from byte array
+                const pdf = await pdfjsLib.getDocument({data: uint8Array}).promise;
+                window.currentPdf = pdf;
+                
+                console.log(`PDF loaded successfully, pages: ${pdf.numPages}`);
+                return pdf.numPages;
+            } catch (error) {
+                console.error('Error loading PDF from bytes:', error);
+                return 0;
+            }
+        },
+        
         renderPage: async function (pageNum) {
             try {
                 if (!window.currentPdf) {
@@ -158,6 +188,14 @@
             } catch (error) {
                 console.error('Error rendering page:', error);
                 return false;
+            }
+        },
+        
+        cleanup: function() {
+            if (window.currentPdf) {
+                window.currentPdf.destroy();
+                window.currentPdf = null;
+                console.log('PDF cleanup completed');
             }
         }
     };
@@ -238,29 +276,60 @@
         StateHasChanged();
 
         item = file;
-        var content = await GraphServiceClient.Drives[drive.Id].Items[file.Id].Content.GetAsync();
-        using (var ms = new MemoryStream())
+        
+        try
         {
-            await content.CopyToAsync(ms);
-            contentString = string.Format("data:application/pdf;base64,{0}", Convert.ToBase64String(ms.ToArray()));
+            // Check file size before loading
+            var fileSize = file.Size ?? 0;
+            if (fileSize > 50 * 1024 * 1024) // 50MB limit
+            {
+                Console.WriteLine($"File too large: {fileSize / (1024 * 1024)}MB. Maximum supported size is 50MB.");
+                isLoadingContent = false;
+                StateHasChanged();
+                return;
+            }
+
+            var content = await GraphServiceClient.Drives[drive.Id].Items[file.Id].Content.GetAsync();
+            
+            // Convert to byte array more efficiently
+            byte[] pdfBytes;
+            if (content is MemoryStream ms)
+            {
+                pdfBytes = ms.ToArray();
+            }
+            else
+            {
+                using var memoryStream = new MemoryStream();
+                await content.CopyToAsync(memoryStream);
+                pdfBytes = memoryStream.ToArray();
+            }
+            
+            // Pass byte array directly to JavaScript instead of Base64 string
+            await LoadPdfWithPdfJs(pdfBytes);
         }
-        
-        // Load PDF with PDF.js
-        await LoadPdfWithPdfJs();
-        
-        isLoadingContent = false;
-        StateHasChanged();
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading PDF: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingContent = false;
+            StateHasChanged();
+        }
     }
 
-    private async Task LoadPdfWithPdfJs()
+    private async Task LoadPdfWithPdfJs(byte[] pdfBytes)
     {
         try
         {
-            totalPages = await JSRuntime.InvokeAsync<int>("pdfJsHelper.loadPdf", contentString);
+            totalPages = await JSRuntime.InvokeAsync<int>("pdfJsHelper.loadPdfFromBytes", pdfBytes);
             currentPage = 1;
             
             if (totalPages > 0)
             {
+                // Set contentString to indicate PDF is loaded (for UI visibility)
+                contentString = "loaded";
+                
                 // Ensure the DOM is updated before trying to render
                 StateHasChanged();
                 await Task.Delay(100); // Give Blazor time to render the canvas element
@@ -296,6 +365,9 @@
 
     private async Task ClosePdf()
     {
+        // Clean up PDF.js memory
+        await JSRuntime.InvokeVoidAsync("pdfJsHelper.cleanup");
+        
         contentString = string.Empty;
         currentPage = 1;
         totalPages = 0;
