@@ -12,8 +12,6 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 //Specific for WebAssembly, can't read as string[] from appsettings.json
 var scopes = builder.Configuration.GetValue<string>("MicrosoftGraph:Scopes").Split(';');
 
-builder.Services.AddBlazorBootstrap();
-
 builder.Services.AddMicrosoftGraphClient(scopes);
 
 builder.Services.AddMsalAuthentication(options =>
