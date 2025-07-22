@@ -201,6 +201,29 @@
     private int currentPage = 1;
     private int totalPages = 0;
 
+    // Class to represent bookmark data
+    public class PageBookmark
+    {
+        public string FileName { get; set; } = string.Empty;
+        public int CurrentPage { get; set; }
+        public int TotalPages { get; set; }
+        public DateTime LastAccessed { get; set; }
+        public string Version { get; set; } = "1.0";
+    }
+
+    /// <summary>
+    /// Generates the bookmark filename for a given PDF filename
+    /// </summary>
+    /// <param name="pdfFileName">The PDF filename (e.g., "document.pdf")</param>
+    /// <returns>The bookmark filename (e.g., "document.yscbr.json")</returns>
+    private static string GetBookmarkFileName(string pdfFileName)
+    {
+        if (string.IsNullOrWhiteSpace(pdfFileName))
+            return string.Empty;
+
+        return pdfFileName.Replace(".pdf", ".yscbr.json", StringComparison.OrdinalIgnoreCase);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -301,6 +324,9 @@
                 // Set contentString to indicate PDF is loaded (for UI visibility)
                 contentString = "loaded";
                 
+                // Try to load existing bookmark from OneDrive
+                await LoadPageBookmarkFromOneDrive();
+                
                 // Ensure the DOM is updated before trying to render
                 StateHasChanged();
                 await Task.Delay(100); // Give Blazor time to render the canvas element
@@ -320,6 +346,10 @@
         {
             currentPage--;
             await JSRuntime.InvokeAsync<bool>("pdfJsHelper.renderPage", currentPage);
+            
+            // Save the new current page to OneDrive bookmark
+            await SavePageBookmarkToOneDrive();
+            
             StateHasChanged();
         }
     }
@@ -330,12 +360,22 @@
         {
             currentPage++;
             await JSRuntime.InvokeAsync<bool>("pdfJsHelper.renderPage", currentPage);
+            
+            // Save the new current page to OneDrive bookmark
+            await SavePageBookmarkToOneDrive();
+            
             StateHasChanged();
         }
     }
 
     private async Task ClosePdf()
     {
+        // Save final bookmark to OneDrive before closing
+        if (item?.Name != null && currentPage > 0)
+        {
+            await SavePageBookmarkToOneDrive();
+        }
+        
         // Clean up PDF.js memory
         await JSRuntime.InvokeVoidAsync("pdfJsHelper.cleanup");
         
@@ -345,4 +385,127 @@
         StateHasChanged();
     }
 
+    private async Task SavePageBookmarkToOneDrive()
+    {
+        if (item?.Name == null || drive?.Id == null) return;
+        
+        try
+        {
+            // Get the current folder (parent of the PDF file)
+            var currentFolder = folderStack.Peek();
+            if (currentFolder?.Id == null) return;
+
+            // Create the bookmark filename using the dedicated function
+            var bookmarkFileName = GetBookmarkFileName(item.Name);
+
+            // Create bookmark data
+            var bookmark = new PageBookmark
+            {
+                FileName = item.Name,
+                CurrentPage = currentPage,
+                TotalPages = totalPages,
+                LastAccessed = DateTime.UtcNow,
+                Version = "1.0"
+            };
+
+            // Convert to JSON
+            var jsonContent = System.Text.Json.JsonSerializer.Serialize(bookmark, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+            
+            // Convert JSON string to stream
+            var jsonBytes = System.Text.Encoding.UTF8.GetBytes(jsonContent);
+            using var jsonStream = new MemoryStream(jsonBytes);
+
+            // Check if bookmark file already exists
+            var existingBookmark = await FindExistingBookmark(currentFolder.Id, bookmarkFileName);
+            
+            if (existingBookmark != null)
+            {
+                // Update existing bookmark file
+                await GraphServiceClient.Drives[drive.Id]
+                    .Items[existingBookmark.Id]
+                    .Content
+                    .PutAsync(jsonStream);
+                
+                Console.WriteLine($"Updated bookmark: {bookmarkFileName} with page {currentPage}");
+            }
+            else
+            {
+                await GraphServiceClient.Drives[drive.Id]
+                    .Items[currentFolder.Id]
+                    .ItemWithPath(bookmarkFileName)
+                    .Content
+                    .PutAsync(jsonStream);
+                
+                Console.WriteLine($"Created bookmark: {bookmarkFileName} with page {currentPage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving bookmark to OneDrive: {ex.Message}");
+        }
+    }
+
+    private async Task<DriveItem?> FindExistingBookmark(string folderId, string bookmarkFileName)
+    {
+        try
+        {
+            var folderItems = await GraphServiceClient.Drives[drive.Id]
+                .Items[folderId]
+                .Children
+                .GetAsync();
+
+            return folderItems?.Value?.FirstOrDefault(f => 
+                f.Name?.Equals(bookmarkFileName, StringComparison.OrdinalIgnoreCase) == true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error finding existing bookmark: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task LoadPageBookmarkFromOneDrive()
+    {
+        if (item?.Name == null || drive?.Id == null) return;
+        
+        try
+        {
+            // Get the current folder (parent of the PDF file)
+            var currentFolder = folderStack.Peek();
+            if (currentFolder?.Id == null) return;
+
+            // Create the bookmark filename using the dedicated function
+            var bookmarkFileName = GetBookmarkFileName(item.Name);
+            
+            // Find existing bookmark
+            var existingBookmark = await FindExistingBookmark(currentFolder.Id, bookmarkFileName);
+            
+            if (existingBookmark != null)
+            {
+                // Download and parse the bookmark file
+                var bookmarkStream = await GraphServiceClient.Drives[drive.Id]
+                    .Items[existingBookmark.Id]
+                    .Content
+                    .GetAsync();
+
+                using var reader = new StreamReader(bookmarkStream);
+                var jsonContent = await reader.ReadToEndAsync();
+                
+                var bookmark = System.Text.Json.JsonSerializer.Deserialize<PageBookmark>(jsonContent);
+                
+                if (bookmark != null && bookmark.CurrentPage > 0 && bookmark.CurrentPage <= totalPages)
+                {
+                    currentPage = bookmark.CurrentPage;
+                    Console.WriteLine($"Loaded bookmark: {item.Name} at page {currentPage}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading bookmark from OneDrive: {ex.Message}");
+        }
+    }
 }
